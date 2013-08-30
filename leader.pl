@@ -38,7 +38,9 @@ print "Got sequence number " . $my_seqno . "\n";
 # Monitor largest seqno smaller than my own
 for(;;){
   my $monitor_seqno = undef;
-  foreach my $path($zkh->get_children($ROOT)){
+  my @paths         = $zkh->get_children($ROOT) or die
+      "Get children failed: " . $zkh->get_error();
+  foreach my $path(@paths){
     my($service, $seqno) = split(/_/, $path);
     # Dont look at other services
     next if $service ne $SERVICE;
