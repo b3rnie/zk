@@ -8,36 +8,40 @@ class AsMaster
   def initialize(service)
     @service = service
     @zk      = connect()
-    @zk.create(:path => '/ELECTION')
+    @zk.create(:path => @@root)
   end
 
   def run(&x)
     my_seqno = create_me()
     become_leader(my_seqno)
-    Thread.abort_on_exception = true
+    # Thread.abort_on_exception = true
     t = Thread.new do
       x.call
     end
-    while res = @zk.stat(:path => "#{@@root}/#{@service}_#{my_seqno}")
-      break unless res[:stat].exists?
-      break unless t.alive?
-      sleep 1
+    begin
+      while res = @zk.stat(:path => "#{@@root}/#{@service}_#{my_seqno}")
+        break unless res[:stat].exists?
+        break unless t.alive?
+        sleep 1
+      end
+    rescue Exception => e
+      puts e
+      Thread.kill(t) if t.alive?
     end
   end
 
   private
-
   def become_leader(my_seqno)
     while true
-      waiting = @zk.get_children(:path => @@root)[:children].select { |e|
-        e.split('_')[0] == @service
+      waiting = @zk.get_children(:path => @@root)[:children].map { |e|
+        Hash[[:service, :seqno].zip(e.split('_'))]
+      }.select{ |e|
+        e[:service] == @service
       }
       monitor = waiting.inject(nil) { |monitor, e|
-        seqno = e.split('_')[1]
-        if monitor && seqno > monitor && seqno < my_seqno
-          seqno
-        elsif !monitor && seqno < my_seqno
-          seqno
+        if (monitor && e[:seqno] > monitor && e[:seqno] < my_seqno) ||
+            (!monitor && e[:seqno] < my_seqno)
+          e[:seqno]
         else
           monitor
         end
@@ -57,7 +61,8 @@ class AsMaster
   end
 
   def connect()
-    Zookeeper.new('192.168.0.20:2181')
+    # Zookeeper.new('192.168.0.20:2181')
+    Zookeeper.new('localhost:2181')
   end
 
   def create_me()
@@ -71,5 +76,5 @@ end
 m = AsMaster.new('service')
 m.run do
   puts "I am master!"
-  sleep 5
+  sleep 120
 end
